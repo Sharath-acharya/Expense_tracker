@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '../lib/api';
 
+// Decode JWT and check expiry without a library
+const isTokenExpired = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 < Date.now();
+  } catch {
+    return true; // treat malformed token as expired
+  }
+};
+
 const useStore = create(
   persist(
     (set, get) => ({
@@ -24,7 +34,12 @@ const useStore = create(
       },
 
       logout: () => {
-        set({ user: null, token: null, expenses: [], summary: { totalIncome: 0, totalExpense: 0, balance: 0 } });
+        set({
+          user: null,
+          token: null,
+          expenses: [],
+          summary: { totalIncome: 0, totalExpense: 0, balance: 0 },
+        });
         delete api.defaults.headers.common['Authorization'];
       },
 
@@ -56,9 +71,13 @@ const useStore = create(
 
       initAuth: () => {
         const token = get().token;
-        if (token) {
-          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        if (!token || isTokenExpired(token)) {
+          // Clear stale/expired token
+          set({ user: null, token: null });
+          delete api.defaults.headers.common['Authorization'];
+          return;
         }
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       },
     }),
     {
